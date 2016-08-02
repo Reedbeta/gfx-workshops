@@ -48,6 +48,7 @@ GLuint				uniform_buffer = 0;
 void init_graphics();
 void render_frame();
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
 
 // Everything starts here!
 int main (int, const char **)
@@ -61,8 +62,11 @@ int main (int, const char **)
 		return -1;
 	}
 
+	// Tell GLFW we want debugging support enabled
+	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, true);
+
 	// Create a windowed mode window and its OpenGL context
-	window = glfwCreateWindow(1280, 720, "SushiGL", NULL, NULL);
+	window = glfwCreateWindow(1280, 720, "OpenGL Particle System", NULL, NULL);
 	if (!window)
 	{
 		printf("Error: couldn't create window with GLFW :(\n");
@@ -107,6 +111,16 @@ int main (int, const char **)
 
 void init_graphics()
 {
+	// Configure OpenGL debug messages (assuming it's supported)
+	if (GLAD_GL_KHR_debug)
+	{
+		glDebugMessageCallback(&debug_message_callback, nullptr);
+	}
+	else
+	{
+		printf("Warning: OpenGL debug messages not available!\n");
+	}
+
 	// Set up various buffers that we'll pass to the shaders running on the GPU.
 	// 1. The vertex buffer will define the shape of an individual particle.
 	// 2. The particle buffer defines the positions and other properties of the particles.
@@ -207,4 +221,10 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	{
 		glfwSetWindowShouldClose(window, true);
 	}
+}
+
+void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data)
+{
+	// If we get any debug messages from OpenGL, print them out to the terminal
+	printf("[GL] %s\n", msg);
 }
