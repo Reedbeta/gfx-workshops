@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <string>
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -44,7 +46,10 @@ GLuint				vertex_buffer = 0;
 GLuint				particle_buffer = 0;
 GLuint				uniform_buffer = 0;
 
+GLuint				particle_shader_program = 0;
+
 // Pre-declare functions we'll use later
+void load_shaders();
 void init_graphics();
 void render_frame();
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
@@ -89,6 +94,7 @@ int main (int, const char **)
 	printf("Got OpenGL version %d.%d\n", GLVersion.major, GLVersion.minor);
 
 	// Initialize all our graphics resources such as buffers, shaders, etc
+	load_shaders();
 	init_graphics();
 
 	// Loop until the user closes the window
@@ -126,7 +132,7 @@ void init_graphics()
 	// 2. The particle buffer defines the positions and other properties of the particles.
 	// 3. The uniform buffer is a set of global variables accessible to all particles' shaders.
 
-	// Create the vertex buffer. Use math to generate a star shape made out of triangles, just for fun!
+	// Generate some vertices. Use math to generate a star shape made out of triangles, just for fun!
 	static const int star_points = 5;
 	static const int num_vertices = 6 * star_points;
 	particle_vertex vertices[num_vertices] = {};
@@ -187,18 +193,13 @@ void init_graphics()
 
 void render_frame()
 {
-	// Configure rendering for the current size of the window
+	// Set the rendering viewport to match the current size of the window
 	int window_width, window_height;
 	glfwGetWindowSize(window, &window_width, &window_height);
 	glViewport(0, 0, window_width, window_height);
 
-	// Render a shifting color
-	double time = glfwGetTime();
-	glClearColor(
-		float(sin(time))*0.5f+0.5f,
-		float(cos(time))*0.5f+0.5f,
-		1.0f,
-		1.0f);
+	// Render a nice sky blue background
+	glClearColor(0.0f, 0.75f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	// Set up vertex attributes to be loaded from the vertex buffer by the GPU
@@ -211,6 +212,7 @@ void render_frame()
 	// !!!UNDONE: set up uniform buffer
 
 	// Draw the particles
+	glUseProgram(particle_shader_program);
 	glDrawArraysInstanced(GL_TRIANGLES, 0, num_vertices_per_particle, num_particles);
 }
 
@@ -227,4 +229,154 @@ void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severi
 {
 	// If we get any debug messages from OpenGL, print them out to the terminal
 	printf("[GL] %s\n", msg);
+}
+
+
+
+// Infrastructure for shader loading and compilation
+
+bool try_load_shader_source(const char* filename, std::string* text_out)
+{
+	// Try to find the shader file. It could be at different relative
+	// paths depending on which directory we started the app from.
+	FILE * file = nullptr;
+	file = fopen(filename, "rb");
+	if (!file)
+	{
+		std::string prefixed_filename = "../";
+		prefixed_filename += filename;
+		file = fopen(prefixed_filename.c_str(), "rb");
+		if (!file)
+		{
+			printf("Warning: couldn't find shader source file %s!\n", filename);
+			return false;
+		}
+	}
+
+	// Allocate enough memory in the output string to hold the shader file.
+	fseek(file, 0, SEEK_END);
+	int file_size = int(ftell(file));
+	text_out->resize(file_size);
+
+	// Read the file into memory
+	fseek(file, 0, SEEK_SET);
+	fread(&(*text_out)[0], file_size, 1, file);
+
+	fclose(file);
+	return true;
+}
+
+void print_shader_info_log(GLuint shader, const char* filename)
+{
+	int info_log_length = 0;
+	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
+
+	// If the info log is empty, don't print anything.
+	if (!info_log_length)
+		return;
+
+	// Allocate enough memory in a string to hold the info log.
+	std::string info_log;
+	info_log.resize(info_log_length);
+
+	// Read the info log into the string.
+	glGetShaderInfoLog(shader, info_log_length, nullptr, &info_log[0]);
+
+	printf(
+		"----- Info log for: %s -----\n"
+		"%s"
+		"----------------------------------------------\n",
+		filename,
+		info_log.c_str());
+}
+
+GLuint try_load_shader(GLenum shader_type, const char* filename)
+{
+	// Try to find the source file.
+	std::string shader_source;
+	if (!try_load_shader_source(filename, &shader_source))
+		return 0;
+
+	// Got the source code, now try to compile it.
+	GLuint shader = glCreateShader(shader_type);
+	const char* source_pointer = shader_source.c_str();
+	int source_length = int(shader_source.size());
+	glShaderSource(shader, 1, &source_pointer, &source_length);
+	glCompileShader(shader);
+
+	// Print the shader info log (we always do this, even if compilation succeeded,
+	// in order to display any warnings that may have been generated).
+	print_shader_info_log(shader, filename);
+
+	// Check for compilation errors
+	int compiled = 0;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+	if (!compiled)
+	{
+		printf("Warning: %s did not compile!\n", filename);
+		glDeleteShader(shader);
+		return 0;
+	}
+
+	printf("%s compiled successfully!\n", filename);
+	return shader;
+}
+
+void print_program_info_log(GLuint program)
+{
+	int info_log_length = 0;
+	glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
+
+	// If the info log is empty, don't print anything.
+	if (!info_log_length)
+		return;
+
+	// Allocate enough memory in a string to hold the info log.
+	std::string info_log;
+	info_log.resize(info_log_length);
+
+	// Read the info log into the string.
+	glGetProgramInfoLog(program, info_log_length, nullptr, &info_log[0]);
+
+	printf(
+		"----- Info log for shader linking -----\n"
+		"%s"
+		"---------------------------------------\n",
+		info_log.c_str());
+}
+
+void load_shaders()
+{
+	// Try to load and compile the individual shaders
+	GLuint vertex_shader = try_load_shader(GL_VERTEX_SHADER, "vertex_shader.glsl");
+	GLuint fragment_shader = try_load_shader(GL_FRAGMENT_SHADER, "fragment_shader.glsl");
+	if (!vertex_shader || !fragment_shader)
+		return;
+
+	// Link all the shaders together into a program object
+	particle_shader_program = glCreateProgram();
+	glAttachShader(particle_shader_program, vertex_shader);
+	glAttachShader(particle_shader_program, fragment_shader);
+	glLinkProgram(particle_shader_program);
+
+	// Print the program info log (we always do this, even if linking succeeded,
+	// in order to display any warnings that may have been generated).
+	print_program_info_log(particle_shader_program);
+
+	// Check for linking errors
+	int linked = 0;
+	glGetProgramiv(particle_shader_program, GL_LINK_STATUS, &linked);
+	if (linked)
+	{
+		printf("Shaders linked successfully!\n");
+	}
+	else
+	{
+		printf("Warning: shaders did not link!\n");
+		glDeleteProgram(particle_shader_program);
+		particle_shader_program = 0;
+	}
+
+	glDeleteShader(vertex_shader);
+	glDeleteShader(fragment_shader);
 }

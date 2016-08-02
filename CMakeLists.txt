@@ -20,6 +20,7 @@ if (MSVC)
 			string(REGEX REPLACE "/MDd" "/MTd" ${flag} "${${flag}}")
 		endif()
 	endforeach()
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
 # Build GLFW, following instructions from: http://www.glfw.org/docs/latest/build_guide.html#build_link_cmake_source
