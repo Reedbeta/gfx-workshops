@@ -182,16 +182,34 @@ void init_graphics()
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(uniform_data), nullptr, GL_DYNAMIC_DRAW);
 
 	// !!!TEMP: yeah ok put some data
-	particle_data p =
+	particle_data p[] =
 	{
-		0.0f, 0.0f,		// position
-		0.0f, 0.0f,		// velocity
-		0.0f,			// angle
-		0.0f,			// spin
-		1.0f,			// size
-		0.0f,			// age
+		{
+			0.0f, 0.0f,		// position
+			0.0f, 0.0f,		// velocity
+			0.0f,			// angle
+			0.0f,			// spin
+			1.0f,			// size
+			0.0f,			// age
+		},
+		{
+			2.0f, 12.0f,	// position
+			0.0f, 0.0f,		// velocity
+			0.5f,			// angle
+			0.0f,			// spin
+			1.2f,			// size
+			0.0f,			// age
+		},
+		{
+			-8.0f, -2.0f,	// position
+			0.0f, 0.0f,		// velocity
+			-0.5f,			// angle
+			0.0f,			// spin
+			0.7f,			// size
+			0.0f,			// age
+		},
 	};
-	glBufferData(GL_ARRAY_BUFFER, sizeof(particle_data), &p, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(p), &p, GL_DYNAMIC_DRAW);
 }
 
 void render_frame()
@@ -235,11 +253,25 @@ void render_frame()
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	// Set up vertex attributes to be loaded from the vertex buffer by the GPU
-	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(particle_vertex), (const void *)offsetof(particle_vertex, position));
 
-	// !!!UNDONE: set up particle attributes
+	// Set up vertex attributes to be loaded from the vertex buffer by the GPU
+	glBindBuffer(GL_ARRAY_BUFFER, particle_buffer);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, position));
+	glVertexAttribDivisor(1, 1);
+
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, velocity));
+	glVertexAttribDivisor(2, 1);
+
+	// Angle, spin, size, age all packed into a single vec4 attribute, to save space
+	glEnableVertexAttribArray(3);
+	glVertexAttribPointer(3, 4, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, angle));
+	glVertexAttribDivisor(3, 1);
 
 	// Set up the uniform buffer to be loaded by the shaders
 	glBindBufferRange(GL_UNIFORM_BUFFER, 0, uniform_buffer, 0, sizeof(uniform_data));
