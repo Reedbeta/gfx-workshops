@@ -1,8 +1,15 @@
 // workshop01: simple OpenGL particle system
 
+#include <algorithm>	// for std::min, std::max
 #include <cmath>
 #include <cstdio>
 #include <string>
+
+// Windows-specific: prevent Windows headers from defining extra stuff we don't need or want
+#ifdef WIN32
+#	define WIN32_LEAN_AND_MEAN
+#	define NOMINMAX
+#endif
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -183,12 +190,6 @@ void init_graphics()
 		0.0f,			// age
 	};
 	glBufferData(GL_ARRAY_BUFFER, sizeof(particle_data), &p, GL_DYNAMIC_DRAW);
-	uniform_data u =
-	{
-		2.0f, 2.0f,		// window_size
-		0.0f, 0.0f,		// window_center
-	};
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(uniform_data), &u, GL_DYNAMIC_DRAW);
 }
 
 void render_frame()
@@ -197,6 +198,35 @@ void render_frame()
 	int window_width, window_height;
 	glfwGetWindowSize(window, &window_width, &window_height);
 	glViewport(0, 0, window_width, window_height);
+
+	// Calculate the uniform buffer parameters
+	static const float world_size = 30.0f;		// how many world units across should we be able to see in the window
+	float pixels_to_world_scale = world_size / float(std::min(window_width, window_height));
+	uniform_data uniforms =
+	{
+		// window_size
+		pixels_to_world_scale * float(window_width),
+		pixels_to_world_scale * float(window_height),
+		// window_center
+		0.0f,
+		0.3f * world_size,
+	};
+
+	// Send this frame's uniform data to the GPU. Using INVALIDATE_BUFFER_BIT means that
+	// any old data in the buffer is no longer relevant and can be discarded. This allows the
+	// GPU and driver to optimize the memory access under the hood.
+	glBindBuffer(GL_UNIFORM_BUFFER, uniform_buffer);
+	void* mapped_buffer = glMapBufferRange(GL_UNIFORM_BUFFER, 0, sizeof(uniforms), GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_WRITE_BIT);
+	if (mapped_buffer)
+	{
+		memcpy(mapped_buffer, &uniforms, sizeof(uniforms));
+		glUnmapBuffer(GL_UNIFORM_BUFFER);
+		mapped_buffer = nullptr;
+	}
+	else
+	{
+		printf("Warning: couldn't map uniform buffer!\n");
+	}
 
 	// Render a nice sky blue background
 	glClearColor(0.0f, 0.75f, 1.0f, 1.0f);
@@ -209,7 +239,8 @@ void render_frame()
 
 	// !!!UNDONE: set up particle attributes
 
-	// !!!UNDONE: set up uniform buffer
+	// Set up the uniform buffer to be loaded by the shaders
+	glBindBufferRange(GL_UNIFORM_BUFFER, 0, uniform_buffer, 0, sizeof(uniform_data));
 
 	// Draw the particles
 	glUseProgram(particle_shader_program);
@@ -227,6 +258,10 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data)
 {
+	// Skip "notification"-level messages as they tend to be spammy, and don't indicate problems.
+	if (severity == GL_DEBUG_SEVERITY_NOTIFICATION)
+		return;
+
 	// If we get any debug messages from OpenGL, print them out to the terminal
 	printf("[GL] %s\n", msg);
 }
@@ -351,13 +386,21 @@ void load_shaders()
 	GLuint vertex_shader = try_load_shader(GL_VERTEX_SHADER, "vertex_shader.glsl");
 	GLuint fragment_shader = try_load_shader(GL_FRAGMENT_SHADER, "fragment_shader.glsl");
 	if (!vertex_shader || !fragment_shader)
+	{
+		glDeleteShader(vertex_shader);
+		glDeleteShader(fragment_shader);
 		return;
+	}
 
 	// Link all the shaders together into a program object
 	particle_shader_program = glCreateProgram();
 	glAttachShader(particle_shader_program, vertex_shader);
 	glAttachShader(particle_shader_program, fragment_shader);
 	glLinkProgram(particle_shader_program);
+
+	// The individual shader objects are no longer needed now that the program is linked
+	glDeleteShader(vertex_shader);
+	glDeleteShader(fragment_shader);
 
 	// Print the program info log (we always do this, even if linking succeeded,
 	// in order to display any warnings that may have been generated).
@@ -366,17 +409,20 @@ void load_shaders()
 	// Check for linking errors
 	int linked = 0;
 	glGetProgramiv(particle_shader_program, GL_LINK_STATUS, &linked);
-	if (linked)
-	{
-		printf("Shaders linked successfully!\n");
-	}
-	else
+	if (!linked)
 	{
 		printf("Warning: shaders did not link!\n");
 		glDeleteProgram(particle_shader_program);
 		particle_shader_program = 0;
+		return;
 	}
 
-	glDeleteShader(vertex_shader);
-	glDeleteShader(fragment_shader);
+	printf("Shaders linked successfully!\n");
+
+	// Set up uniform block binding (OpenGL 4.1 doesn't support explicit bindings in the shader)
+	GLuint uniform_block_index = glGetUniformBlockIndex(particle_shader_program, "uniform_data");
+	if (uniform_block_index != GL_INVALID_INDEX)
+	{
+		glUniformBlockBinding(particle_shader_program, uniform_block_index, 0);
+	}
 }
