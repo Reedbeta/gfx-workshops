@@ -140,11 +140,11 @@ void init_graphics()
 		static const float inner_radius = 0.5f;
 		static const float outer_radius = 1.0f;
 		vertices[6*i + 0] = particle_vertex{0.0f, 0.0f};
-		vertices[6*i + 1] = particle_vertex{sin(angle_right) * inner_radius, -cos(angle_right) * inner_radius};
-		vertices[6*i + 2] = particle_vertex{sin(angle_middle) * outer_radius, -cos(angle_middle) * outer_radius};
+		vertices[6*i + 1] = particle_vertex{-sin(angle_right) * inner_radius, cos(angle_right) * inner_radius};
+		vertices[6*i + 2] = particle_vertex{-sin(angle_middle) * outer_radius, cos(angle_middle) * outer_radius};
 		vertices[6*i + 3] = vertices[6*i + 0];
 		vertices[6*i + 4] = vertices[6*i + 2];
-		vertices[6*i + 5] = particle_vertex{sin(angle_left) * inner_radius, -cos(angle_left) * inner_radius};
+		vertices[6*i + 5] = particle_vertex{-sin(angle_left) * inner_radius, cos(angle_left) * inner_radius};
 	}
 
 	// Record how many vertices we created in a global variable,
