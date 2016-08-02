@@ -60,6 +60,7 @@ void load_shaders();
 void init_graphics();
 void render_frame();
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void window_resize_callback(GLFWwindow* window, int width, int height);
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
 
 // Everything starts here!
@@ -88,6 +89,7 @@ int main (int, const char **)
 
 	// Set up event-handling callbacks
 	glfwSetKeyCallback(window, &key_callback);
+	glfwSetWindowSizeCallback(window, &window_resize_callback);
 
 	// Make the window's context current
 	glfwMakeContextCurrent(window);
@@ -254,6 +256,14 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	{
 		glfwSetWindowShouldClose(window, true);
 	}
+}
+
+void window_resize_callback(GLFWwindow* window, int width, int height)
+{
+	// Re-render the scene so that it responds continuously while user is resizing.
+	// (Ordinarily, GLFW doesn't resume rendering until the resize is finished).
+	render_frame();
+	glfwSwapBuffers(window);
 }
 
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data)
