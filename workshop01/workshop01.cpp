@@ -14,6 +14,9 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -58,9 +61,10 @@ GLuint				particle_buffer = 0;
 GLuint				uniform_buffer = 0;
 
 GLuint				particle_shader_program = 0;
+time_t				vertex_shader_mtime = 0;
+time_t				fragment_shader_mtime = 0;
 
 // Pre-declare functions we'll use later
-void load_shaders();
 void init_graphics();
 void render_frame();
 void generate_particles(float timestep);
@@ -68,6 +72,8 @@ void simulate_particles(float timestep);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void window_resize_callback(GLFWwindow* window, int width, int height);
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
+void load_shaders();
+void reload_shaders_if_changed();
 
 
 
@@ -111,11 +117,11 @@ int main (int, const char **)
 	printf("Got OpenGL version %d.%d\n", GLVersion.major, GLVersion.minor);
 
 	// Initialize all our graphics resources such as buffers, shaders, etc
-	load_shaders();
 	init_graphics();
 
 	// Loop until the user closes the window
 	double prev_time = 0.0;
+	double prev_shader_load_time = 0.0;
 	while (!glfwWindowShouldClose(window))
 	{
 		double cur_time = glfwGetTime();
@@ -127,6 +133,13 @@ int main (int, const char **)
 
 		// Simulate particles' forward in time using physics
 		simulate_particles(timestep);
+
+		// Check shaders for modifications every 0.5 second to allow live editing
+		if (cur_time > prev_shader_load_time + 0.5)
+		{
+			reload_shaders_if_changed();
+			prev_shader_load_time = cur_time;
+		}
 
 		// Render a new frame
 		render_frame();
@@ -154,6 +167,9 @@ void init_graphics()
 	{
 		printf("Warning: OpenGL debug messages not available!\n");
 	}
+
+	// Load the vertex and fragment shaders
+	load_shaders();
 
 	// Set up various buffers that we'll pass to the shaders running on the GPU.
 	// 1. The vertex buffer will define the shape of an individual particle.
@@ -372,37 +388,6 @@ void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severi
 
 // Infrastructure for shader loading and compilation
 
-bool try_load_shader_source(const char* filename, std::string* text_out)
-{
-	// Try to find the shader file. It could be at different relative
-	// paths depending on which directory we started the app from.
-	FILE * file = nullptr;
-	file = fopen(filename, "rb");
-	if (!file)
-	{
-		std::string prefixed_filename = "../";
-		prefixed_filename += filename;
-		file = fopen(prefixed_filename.c_str(), "rb");
-		if (!file)
-		{
-			printf("Warning: couldn't find shader source file %s!\n", filename);
-			return false;
-		}
-	}
-
-	// Allocate enough memory in the output string to hold the shader file.
-	fseek(file, 0, SEEK_END);
-	int file_size = int(ftell(file));
-	text_out->resize(file_size);
-
-	// Read the file into memory
-	fseek(file, 0, SEEK_SET);
-	fread(&(*text_out)[0], file_size, 1, file);
-
-	fclose(file);
-	return true;
-}
-
 void print_shader_info_log(GLuint shader, const char* filename)
 {
 	int info_log_length = 0;
@@ -427,12 +412,43 @@ void print_shader_info_log(GLuint shader, const char* filename)
 		info_log.c_str());
 }
 
-GLuint try_load_shader(GLenum shader_type, const char* filename)
+GLuint try_load_shader(GLenum shader_type, const char* filename, time_t* o_mtime)
 {
-	// Try to find the source file.
-	std::string shader_source;
-	if (!try_load_shader_source(filename, &shader_source))
+	// Try to find the shader file. It could be at different relative
+	// paths depending on which directory we started the app from.
+	struct stat file_stat = {};
+	FILE * file = nullptr;
+	if (stat(filename, &file_stat) == 0)
+	{
+		file = fopen(filename, "rb");
+	}
+	else
+	{
+		std::string prefixed_filename = "../";
+		prefixed_filename += filename;
+		stat(prefixed_filename.c_str(), &file_stat);
+		file = fopen(prefixed_filename.c_str(), "rb");
+	}
+
+	if (!file)
+	{
+		printf("Warning: couldn't find shader source file %s!\n", filename);
 		return 0;
+	}
+
+	// Store the file's modification time for later use
+	*o_mtime = file_stat.st_mtime;
+
+	// Allocate enough memory in a string to hold the shader file.
+	fseek(file, 0, SEEK_END);
+	int file_size = int(ftell(file));
+	std::string shader_source;
+	shader_source.resize(file_size);
+
+	// Read the file into memory
+	fseek(file, 0, SEEK_SET);
+	fread(&shader_source[0], file_size, 1, file);
+	fclose(file);
 
 	// Got the source code, now try to compile it.
 	GLuint shader = glCreateShader(shader_type);
@@ -485,8 +501,8 @@ void print_program_info_log(GLuint program)
 void load_shaders()
 {
 	// Try to load and compile the individual shaders
-	GLuint vertex_shader = try_load_shader(GL_VERTEX_SHADER, "vertex_shader.glsl");
-	GLuint fragment_shader = try_load_shader(GL_FRAGMENT_SHADER, "fragment_shader.glsl");
+	GLuint vertex_shader = try_load_shader(GL_VERTEX_SHADER, "vertex_shader.glsl", &vertex_shader_mtime);
+	GLuint fragment_shader = try_load_shader(GL_FRAGMENT_SHADER, "fragment_shader.glsl", &fragment_shader_mtime);
 	if (!vertex_shader || !fragment_shader)
 	{
 		glDeleteShader(vertex_shader);
@@ -495,10 +511,10 @@ void load_shaders()
 	}
 
 	// Link all the shaders together into a program object
-	particle_shader_program = glCreateProgram();
-	glAttachShader(particle_shader_program, vertex_shader);
-	glAttachShader(particle_shader_program, fragment_shader);
-	glLinkProgram(particle_shader_program);
+	GLuint new_program = glCreateProgram();
+	glAttachShader(new_program, vertex_shader);
+	glAttachShader(new_program, fragment_shader);
+	glLinkProgram(new_program);
 
 	// The individual shader objects are no longer needed now that the program is linked
 	glDeleteShader(vertex_shader);
@@ -506,25 +522,59 @@ void load_shaders()
 
 	// Print the program info log (we always do this, even if linking succeeded,
 	// in order to display any warnings that may have been generated).
-	print_program_info_log(particle_shader_program);
+	print_program_info_log(new_program);
 
 	// Check for linking errors
 	int linked = 0;
-	glGetProgramiv(particle_shader_program, GL_LINK_STATUS, &linked);
+	glGetProgramiv(new_program, GL_LINK_STATUS, &linked);
 	if (!linked)
 	{
 		printf("Warning: shaders did not link!\n");
-		glDeleteProgram(particle_shader_program);
-		particle_shader_program = 0;
+		glDeleteProgram(new_program);
+		new_program = 0;
 		return;
 	}
 
 	printf("Shaders linked successfully!\n");
 
 	// Set up uniform block binding (OpenGL 4.1 doesn't support explicit bindings in the shader)
-	GLuint uniform_block_index = glGetUniformBlockIndex(particle_shader_program, "uniform_data");
+	GLuint uniform_block_index = glGetUniformBlockIndex(new_program, "uniform_data");
 	if (uniform_block_index != GL_INVALID_INDEX)
 	{
-		glUniformBlockBinding(particle_shader_program, uniform_block_index, 0);
+		glUniformBlockBinding(new_program, uniform_block_index, 0);
+	}
+
+	// Replace the old program
+	glDeleteProgram(particle_shader_program);
+	particle_shader_program = new_program;
+}
+
+bool check_shader_changed(const char* filename, time_t prev_mtime)
+{
+	// Try to find the shader file. It could be at different relative
+	// paths depending on which directory we started the app from.
+	struct stat file_stat = {};
+	if (stat(filename, &file_stat) != 0)
+	{
+		std::string prefixed_filename = "../";
+		prefixed_filename += filename;
+		if (stat(prefixed_filename.c_str(), &file_stat) != 0)
+		{
+			// Couldn't find the file - treat it as unmodified
+			return false;
+		}
+	}
+
+	return (file_stat.st_mtime > prev_mtime);
+}
+
+void reload_shaders_if_changed()
+{
+	bool vertex_shader_changed = check_shader_changed("vertex_shader.glsl", vertex_shader_mtime);
+	bool fragment_shader_changed = check_shader_changed("fragment_shader.glsl", fragment_shader_mtime);
+	if (vertex_shader_changed || fragment_shader_changed)
+	{
+		printf("Shader source files updated; recompiling\n");
+		load_shaders();
 	}
 }
