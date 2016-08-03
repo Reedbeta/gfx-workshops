@@ -1,6 +1,14 @@
 // Fragment shader for simple particle system
 #version 410
 
+// Uniforms passed from main app: this matches struct uniform_data in the C++ code
+layout(std140) uniform uniform_data
+{
+	vec2 window_size;		// window size in world space
+	vec2 window_center;		// window center in world space	
+	float time;				// current simulation time in seconds
+};
+
 // Input data from vertex shader
 layout(location = 0) in vec2 vertex_position;
 layout(location = 1) in vec2 particle_position;

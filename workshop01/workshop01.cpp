@@ -42,6 +42,7 @@ struct uniform_data
 {
 	float window_size[2];		// window size in world space
 	float window_center[2];		// window center in world space
+	float time;					// current simulation time in seconds
 };
 
 // Global variables
@@ -207,12 +208,10 @@ void render_frame()
 	float pixels_to_world_scale = world_size / float(std::min(window_width, window_height));
 	uniform_data uniforms =
 	{
-		// window_size
-		pixels_to_world_scale * float(window_width),
-		pixels_to_world_scale * float(window_height),
-		// window_center
-		0.0f,
-		0.4f * world_size,
+		pixels_to_world_scale * float(window_width),	// window_size.x
+		pixels_to_world_scale * float(window_height),	// window_size.y
+		0.0f, 0.4f * world_size,						// window_center
+		float(glfwGetTime()),							// time
 	};
 
 	// Send this frame's uniform data to the GPU. Using INVALIDATE_BUFFER_BIT means that
@@ -304,7 +303,8 @@ void generate_particles(float timestep)
 		particles[next_particle_index] = particle_data
 		{
 			0.0f, 0.0f,								// position
-			random_in_range(-12.0f, 12.0f), random_in_range(24.0f, 48.0f),	// velocity
+			random_in_range(-12.0f, 12.0f),			// velocity.x
+			random_in_range(24.0f, 48.0f),			// velocity.y
 			random_in_range(0.0f, two_pi),			// angle
 			random_in_range(-5.0f, 5.0f),			// spin
 			exp2(random_in_range(-2.0f, 0.5f)),		// size

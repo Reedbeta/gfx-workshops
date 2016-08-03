@@ -6,6 +6,7 @@ layout(std140) uniform uniform_data
 {
 	vec2 window_size;		// window size in world space
 	vec2 window_center;		// window center in world space	
+	float time;				// current simulation time in seconds
 };
 
 // Input data from vertex buffer
