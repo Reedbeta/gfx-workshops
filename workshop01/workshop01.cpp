@@ -17,6 +17,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+static const float two_pi = 6.283185308f;
+
 // Definition of the data for a single vertex for our particle system
 struct particle_vertex
 {
@@ -59,6 +61,8 @@ GLuint				particle_shader_program = 0;
 void load_shaders();
 void init_graphics();
 void render_frame();
+void generate_particles();
+void simulate_particles();
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void window_resize_callback(GLFWwindow* window, int width, int height);
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
@@ -109,6 +113,12 @@ int main (int, const char **)
 	// Loop until the user closes the window
 	while (!glfwWindowShouldClose(window))
 	{
+		// Generate new particles
+		generate_particles();
+
+		// Simulate particles' forward in time using physics
+		simulate_particles();
+
 		// Render a new frame
 		render_frame();
 
@@ -147,7 +157,6 @@ void init_graphics()
 	particle_vertex vertices[num_vertices] = {};
 	for (int i = 0; i < star_points; ++i)
 	{
-		static const float two_pi = 6.283185308f;
 		float angle_left   = two_pi * float(2*i + 1) / float(2*star_points);
 		float angle_middle = two_pi * float(i) / float(star_points);
 		float angle_right  = two_pi * float(2*i - 1) / float(2*star_points);
@@ -169,47 +178,17 @@ void init_graphics()
 	// Upload this buffer to the GPU, where we'll re-use it each time we draw.
 	glGenBuffers(1, &vertex_buffer);
 	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(particle_vertex) * num_vertices, vertices, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
 	// Now create the particle buffer. We're going to update this each frame, so we won't put any data in it yet.
 	glGenBuffers(1, &particle_buffer);
 	glBindBuffer(GL_ARRAY_BUFFER, particle_buffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(particle_data) * num_particles, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(particles), nullptr, GL_DYNAMIC_DRAW);
 
 	// Now create the uniform buffer. Again, this will be updated each frame.
 	glGenBuffers(1, &uniform_buffer);
 	glBindBuffer(GL_UNIFORM_BUFFER, uniform_buffer);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(uniform_data), nullptr, GL_DYNAMIC_DRAW);
-
-	// !!!TEMP: yeah ok put some data
-	particle_data p[] =
-	{
-		{
-			0.0f, 0.0f,		// position
-			0.0f, 0.0f,		// velocity
-			0.0f,			// angle
-			0.0f,			// spin
-			1.0f,			// size
-			0.0f,			// age
-		},
-		{
-			2.0f, 12.0f,	// position
-			0.0f, 0.0f,		// velocity
-			0.5f,			// angle
-			0.0f,			// spin
-			1.2f,			// size
-			0.0f,			// age
-		},
-		{
-			-8.0f, -2.0f,	// position
-			0.0f, 0.0f,		// velocity
-			-0.5f,			// angle
-			0.0f,			// spin
-			0.7f,			// size
-			0.0f,			// age
-		},
-	};
-	glBufferData(GL_ARRAY_BUFFER, sizeof(p), &p, GL_DYNAMIC_DRAW);
 }
 
 void render_frame()
@@ -235,17 +214,28 @@ void render_frame()
 	// Send this frame's uniform data to the GPU. Using INVALIDATE_BUFFER_BIT means that
 	// any old data in the buffer is no longer relevant and can be discarded. This allows the
 	// GPU and driver to optimize the memory access under the hood.
-	glBindBuffer(GL_UNIFORM_BUFFER, uniform_buffer);
-	void* mapped_buffer = glMapBufferRange(GL_UNIFORM_BUFFER, 0, sizeof(uniforms), GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_WRITE_BIT);
-	if (mapped_buffer)
+	glBindBuffer(GL_UNIFORM_BUFFER, uniform_buffer);	
+	if (void* mapped_buffer = glMapBufferRange(GL_UNIFORM_BUFFER, 0, sizeof(uniforms), GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_WRITE_BIT))
 	{
 		memcpy(mapped_buffer, &uniforms, sizeof(uniforms));
 		glUnmapBuffer(GL_UNIFORM_BUFFER);
-		mapped_buffer = nullptr;
 	}
 	else
 	{
 		printf("Warning: couldn't map uniform buffer!\n");
+	}
+
+	// Send this frame's particle data to the GPU.
+	glBindBuffer(GL_ARRAY_BUFFER, particle_buffer);
+	if (void* mapped_buffer = glMapBufferRange(GL_ARRAY_BUFFER, 0, sizeof(particles), GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_WRITE_BIT))
+	{
+		memcpy(mapped_buffer, &particles, sizeof(particles));
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		mapped_buffer = nullptr;
+	}
+	else
+	{
+		printf("Warning: couldn't map particle buffer!\n");
 	}
 
 	// Render a nice sky blue background
@@ -279,6 +269,43 @@ void render_frame()
 	// Draw the particles
 	glUseProgram(particle_shader_program);
 	glDrawArraysInstanced(GL_TRIANGLES, 0, num_vertices_per_particle, num_particles);
+}
+
+float random_in_range(float min, float max)
+{
+	// Xorshift random number algorithm invented by George Marsaglia
+	static uint32_t rng_state = 0xf2eec0de;
+	rng_state ^= (rng_state << 13);
+    rng_state ^= (rng_state >> 17);
+    rng_state ^= (rng_state << 5);
+	float random_0_to_1 = float(rng_state) * (1.0f/4294967296.0f);
+	return min + (max - min) * random_0_to_1;
+}
+
+void generate_particles()
+{
+	static const int particles_per_frame = 10;
+	for (int i = 0; i < particles_per_frame; ++i)
+	{
+		// Set up a particle with random starting values
+		particles[next_particle_index] = particle_data
+		{
+			random_in_range(-30.0f, 30.0f), random_in_range(-30.0f, 30.0f),		// position
+			0.0f, 0.0f,	// velocity
+			random_in_range(0.0f, two_pi),			// angle
+			0.0f,	// spin
+			exp2(random_in_range(-2.0f, 0.5f)),		// size
+			random_in_range(0.0f, 1.0f/60.0f),		// age
+		};
+
+		// Increment to the next particle, wrapping around to the beginning
+		// of the buffer once we've gone through the whole thing.
+		next_particle_index = (next_particle_index + 1) % num_particles;
+	}
+}
+
+void simulate_particles()
+{
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
