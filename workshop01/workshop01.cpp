@@ -22,12 +22,16 @@
 
 static const float two_pi = 6.283185308f;
 
-
-
 // Definition of the data for a single vertex for our particle system
 struct particle_vertex
 {
 	float position[2];		// position of vertex, as an offset from the center of the particle
+};
+
+// And a definition for our screen space quad vertices
+struct quad_vertex
+{
+	float screen_position[2];
 };
 
 // Definition of the data for a single particle
@@ -47,6 +51,7 @@ struct uniform_data
 {
 	float window_size[2];		// window size in world space
 	float window_center[2];		// window center in world space
+	float light_dir[3];			// direction of a moving light source
 	float time;					// current simulation time in seconds
 };
 
@@ -56,13 +61,19 @@ particle_data		particles[num_particles] = {};
 int					num_vertices_per_particle = 0;
 
 GLFWwindow*			window = nullptr;
+GLuint				quad_vertex_buffer = 0;
 GLuint				vertex_buffer = 0;
 GLuint				particle_buffer = 0;
 GLuint				uniform_buffer = 0;
 
 GLuint				particle_shader_program = 0;
+GLuint				raytrace_shader_program = 0;
 time_t				vertex_shader_mtime = 0;
 time_t				fragment_shader_mtime = 0;
+time_t				quad_vertex_shader_mtime = 0;
+time_t				raytrace_shader_mtime = 0;
+
+bool raytrace_mode = false;
 
 // Pre-declare functions we'll use later
 void init_graphics();
@@ -71,8 +82,9 @@ void generate_particles(float timestep);
 void simulate_particles(float timestep);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void window_resize_callback(GLFWwindow* window, int width, int height);
-void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
-void load_shaders();
+void APIENTRY debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
+void load_all_shaders();
+void load_shaders(const char* vertex_shader_file, const char* fragment_shader_file, time_t* vertex_shader_time_ptr, time_t* fragment_shader_time_ptr, GLuint* out_program);
 void reload_shaders_if_changed();
 
 
@@ -169,7 +181,7 @@ void init_graphics()
 	}
 
 	// Load the vertex and fragment shaders
-	load_shaders();
+	load_all_shaders();
 
 	// Set up various buffers that we'll pass to the shaders running on the GPU.
 	// 1. The vertex buffer will define the shape of an individual particle.
@@ -196,6 +208,17 @@ void init_graphics()
 		vertices[6*i + 5] = particle_vertex{-sin(angle_left) * inner_radius, cos(angle_left) * inner_radius};
 	}
 
+	// Generate two triangles that make up a screen-space quad
+	quad_vertex quad_vertices[6] = 
+	{
+		-1.0f, -1.0f,
+		1.0f, -1.0f,
+		-1.0f, 1.0f,
+		1.0f, -1.0f,
+		1.0f, 1.0f,
+		-1.0f, 1.0f,
+	};
+
 	// Record how many vertices we created in a global variable,
 	// so later code will know how many vertices to draw.
 	num_vertices_per_particle = num_vertices;
@@ -204,6 +227,11 @@ void init_graphics()
 	glGenBuffers(1, &vertex_buffer);
 	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	// Screen space quad buffer
+	glGenBuffers(1, &quad_vertex_buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, quad_vertex_buffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), quad_vertices, GL_STATIC_DRAW);
 
 	// Now create the particle buffer. We're going to update this each frame, so we won't put any data in it yet.
 	glGenBuffers(1, &particle_buffer);
@@ -223,6 +251,12 @@ void render_frame()
 	glfwGetWindowSize(window, &window_width, &window_height);
 	glViewport(0, 0, window_width, window_height);
 
+	// Get time
+	float time = float(glfwGetTime());
+
+	// Calculate a moving light source
+	float light_dir[3] = { cos(time) * 0.7f, 0.5f, sin(time) * 0.7f };
+
 	// Calculate the uniform buffer parameters
 	static const float world_size = 30.0f;		// how many world units across should we be able to see in the window
 	float pixels_to_world_scale = world_size / float(std::min(window_width, window_height));
@@ -231,7 +265,8 @@ void render_frame()
 		pixels_to_world_scale * float(window_width),	// window_size.x
 		pixels_to_world_scale * float(window_height),	// window_size.y
 		0.0f, 0.4f * world_size,						// window_center
-		float(glfwGetTime()),							// time
+		light_dir[0], light_dir[1], light_dir[2],		// light_dir
+		time,							// time
 	};
 
 	// Send this frame's uniform data to the GPU. Using INVALIDATE_BUFFER_BIT means that
@@ -265,33 +300,51 @@ void render_frame()
 	glClearColor(0.0f, 0.6f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	// Set up vertex attributes to be loaded from the vertex buffer by the GPU
-	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(particle_vertex), (const void *)offsetof(particle_vertex, position));
-
-	// Set up vertex attributes to be loaded from the vertex buffer by the GPU
-	glBindBuffer(GL_ARRAY_BUFFER, particle_buffer);
-
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, position));
-	glVertexAttribDivisor(1, 1);
-
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, velocity));
-	glVertexAttribDivisor(2, 1);
-
-	// Angle, spin, size, creation_time all packed into a single vec4 attribute, to save space
-	glEnableVertexAttribArray(3);
-	glVertexAttribPointer(3, 4, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, angle));
-	glVertexAttribDivisor(3, 1);
-
 	// Set up the uniform buffer to be loaded by the shaders
 	glBindBufferRange(GL_UNIFORM_BUFFER, 0, uniform_buffer, 0, sizeof(uniform_data));
 
-	// Draw the particles
-	glUseProgram(particle_shader_program);
-	glDrawArraysInstanced(GL_TRIANGLES, 0, num_vertices_per_particle, num_particles);
+	
+	if (!raytrace_mode)
+	{
+		// Rasterized scene
+
+		// Set up vertex attributes to be loaded from the vertex buffer by the GPU
+		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(particle_vertex), (const void *)offsetof(particle_vertex, position));
+
+		// Set up vertex attributes to be loaded from the particle buffer by the GPU
+		glBindBuffer(GL_ARRAY_BUFFER, particle_buffer);
+
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, position));
+		glVertexAttribDivisor(1, 1);
+
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, velocity));
+		glVertexAttribDivisor(2, 1);
+
+		// Angle, spin, size, creation_time all packed into a single vec4 attribute, to save space
+		glEnableVertexAttribArray(3);
+		glVertexAttribPointer(3, 4, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, angle));
+		glVertexAttribDivisor(3, 1);
+
+		// Draw the particles
+		glUseProgram(particle_shader_program);
+		glDrawArraysInstanced(GL_TRIANGLES, 0, num_vertices_per_particle, num_particles);
+	}
+	else
+	{
+		// Raytraced scene
+		// Set up vertex attributes to be loaded from the quad buffer by the GPU
+		glBindBuffer(GL_ARRAY_BUFFER, quad_vertex_buffer);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, false, sizeof(quad_vertex), (const void *)offsetof(particle_vertex, position));
+
+		// Draw only a screenspace quad.  Fragment shader does the rest!
+		glUseProgram(raytrace_shader_program);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+	}
 }
 
 float random_in_range(float min, float max)
@@ -364,6 +417,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 	{
 		glfwSetWindowShouldClose(window, true);
 	}
+
+	if (key == GLFW_KEY_R && action == GLFW_PRESS)
+	{
+		raytrace_mode = !raytrace_mode;
+	}
 }
 
 void window_resize_callback(GLFWwindow* window, int width, int height)
@@ -374,7 +432,7 @@ void window_resize_callback(GLFWwindow* window, int width, int height)
 	glfwSwapBuffers(window);
 }
 
-void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data)
+void APIENTRY debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data)
 {
 	// Skip "notification"-level messages as they tend to be spammy, and don't indicate problems.
 	if (severity == GL_DEBUG_SEVERITY_NOTIFICATION)
@@ -429,7 +487,7 @@ GLuint try_load_shader(GLenum shader_type, const char* filename, time_t* o_mtime
 		stat(prefixed_filename.c_str(), &file_stat);
 		file = fopen(prefixed_filename.c_str(), "rb");
 	}
-
+	
 	if (!file)
 	{
 		printf("Warning: couldn't find shader source file %s!\n", filename);
@@ -498,11 +556,17 @@ void print_program_info_log(GLuint program)
 		info_log.c_str());
 }
 
-void load_shaders()
+void load_all_shaders()
+{
+	load_shaders("vertex_shader.glsl", "fragment_shader.glsl", &vertex_shader_mtime, &fragment_shader_mtime, &particle_shader_program);
+	load_shaders("vertex_shader_quad.glsl", "fragment_shader_raytrace.glsl", &quad_vertex_shader_mtime, &raytrace_shader_mtime, &raytrace_shader_program);
+}
+
+void load_shaders(const char* vertex_shader_file, const char* fragment_shader_file, time_t* vertex_shader_time_ptr, time_t* fragment_shader_time_ptr, GLuint* out_program )
 {
 	// Try to load and compile the individual shaders
-	GLuint vertex_shader = try_load_shader(GL_VERTEX_SHADER, "vertex_shader.glsl", &vertex_shader_mtime);
-	GLuint fragment_shader = try_load_shader(GL_FRAGMENT_SHADER, "fragment_shader.glsl", &fragment_shader_mtime);
+	GLuint vertex_shader = try_load_shader(GL_VERTEX_SHADER, vertex_shader_file, vertex_shader_time_ptr);
+	GLuint fragment_shader = try_load_shader(GL_FRAGMENT_SHADER, fragment_shader_file, fragment_shader_time_ptr);
 	if (!vertex_shader || !fragment_shader)
 	{
 		glDeleteShader(vertex_shader);
@@ -545,8 +609,8 @@ void load_shaders()
 	}
 
 	// Replace the old program
-	glDeleteProgram(particle_shader_program);
-	particle_shader_program = new_program;
+	glDeleteProgram(*out_program);
+	*out_program = new_program;
 }
 
 bool check_shader_changed(const char* filename, time_t prev_mtime)
@@ -570,11 +634,12 @@ bool check_shader_changed(const char* filename, time_t prev_mtime)
 
 void reload_shaders_if_changed()
 {
-	bool vertex_shader_changed = check_shader_changed("vertex_shader.glsl", vertex_shader_mtime);
-	bool fragment_shader_changed = check_shader_changed("fragment_shader.glsl", fragment_shader_mtime);
-	if (vertex_shader_changed || fragment_shader_changed)
+	if (check_shader_changed("vertex_shader.glsl", vertex_shader_mtime) ||
+		check_shader_changed("fragment_shader.glsl", fragment_shader_mtime) ||
+		check_shader_changed("vertex_shader_quad.glsl", quad_vertex_shader_mtime) ||
+		check_shader_changed("fragment_shader_raytrace.glsl", raytrace_shader_mtime))
 	{
 		printf("Shader source files updated; recompiling\n");
-		load_shaders();
+		load_all_shaders();
 	}
 }
