@@ -15,20 +15,18 @@ layout(location = 0) in vec2 vertex_position;
 // Input data from particle data buffer
 layout(location = 1) in vec2 particle_position;
 layout(location = 2) in vec2 particle_velocity;
-layout(location = 3) in vec4 particle_angle_spin_size_age;	// Four values packed together in a vec4
+layout(location = 3) in vec4 particle_angle_spin_size_creationtime;	// Four values packed together in a vec4
 
 // Output data to send to fragment shader
 layout(location = 0) out vec2 o_vertex_position;
 layout(location = 1) out vec2 o_particle_position;
 layout(location = 2) out vec2 o_particle_velocity;
-layout(location = 3) out vec4 o_particle_angle_spin_size_age;
+layout(location = 3) out vec4 o_particle_angle_spin_size_creationtime;
 
 void main()
 {
-	float particle_angle = particle_angle_spin_size_age.x;
-	float particle_spin  = particle_angle_spin_size_age.y;
-	float particle_size  = particle_angle_spin_size_age.z;
-	float particle_age   = particle_angle_spin_size_age.w;
+	float particle_angle = particle_angle_spin_size_creationtime.x;
+	float particle_size  = particle_angle_spin_size_creationtime.z;
 
 	// Calculate the world-space position of the vertex, by applying the vertex's local offset to
 	// the particle's position, and applying the particle's rotation and size.
@@ -46,5 +44,5 @@ void main()
 	o_vertex_position = vertex_position;
 	o_particle_position = particle_position;
 	o_particle_velocity = particle_velocity;
-	o_particle_angle_spin_size_age = particle_angle_spin_size_age;
+	o_particle_angle_spin_size_creationtime = particle_angle_spin_size_creationtime;
 }

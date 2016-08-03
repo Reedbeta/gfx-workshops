@@ -13,13 +13,13 @@ layout(std140) uniform uniform_data
 layout(location = 0) in vec2 vertex_position;
 layout(location = 1) in vec2 particle_position;
 layout(location = 2) in vec2 particle_velocity;
-layout(location = 3) in vec4 particle_angle_spin_size_age;	// Four values packed together in a vec4
+layout(location = 3) in vec4 particle_angle_spin_size_creationtime;	// Four values packed together in a vec4
 
 // Output data to the framebuffer
 layout(location = 0) out vec4 o_color;
 
 void main()
 {
-	// Set the output color to a nice yellow
+	// Set the output color to a nice golden yellow
 	o_color = vec4(1.0, 0.79, 0.03, 1.0);
 }

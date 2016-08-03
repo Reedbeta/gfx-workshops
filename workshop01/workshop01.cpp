@@ -19,6 +19,8 @@
 
 static const float two_pi = 6.283185308f;
 
+
+
 // Definition of the data for a single vertex for our particle system
 struct particle_vertex
 {
@@ -33,7 +35,7 @@ struct particle_data
 	float angle;			// current rotation angle
 	float spin;				// how fast it's rotating
 	float size;				// particle size
-	float age;				// how old the particle is
+	float creation_time;	// when the particle was created
 };
 
 // Definition of the "uniform" data that will be passed to the shaders...
@@ -66,6 +68,8 @@ void simulate_particles(float timestep);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void window_resize_callback(GLFWwindow* window, int width, int height);
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
+
+
 
 // Everything starts here!
 int main (int, const char **)
@@ -261,7 +265,7 @@ void render_frame()
 	glVertexAttribPointer(2, 2, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, velocity));
 	glVertexAttribDivisor(2, 1);
 
-	// Angle, spin, size, age all packed into a single vec4 attribute, to save space
+	// Angle, spin, size, creation_time all packed into a single vec4 attribute, to save space
 	glEnableVertexAttribArray(3);
 	glVertexAttribPointer(3, 4, GL_FLOAT, false, sizeof(particle_data), (const void *)offsetof(particle_data, angle));
 	glVertexAttribDivisor(3, 1);
@@ -296,6 +300,8 @@ void generate_particles(float timestep)
 	int particles_to_generate = int(floor(particle_generation_accumulator));
 	particle_generation_accumulator -= particles_to_generate;
 
+	float time = float(glfwGetTime());
+
 	// Generate the particles by writing into the particles data array
 	for (int i = 0; i < particles_to_generate; ++i)
 	{
@@ -308,7 +314,7 @@ void generate_particles(float timestep)
 			random_in_range(0.0f, two_pi),			// angle
 			random_in_range(-5.0f, 5.0f),			// spin
 			exp2(random_in_range(-2.0f, 0.5f)),		// size
-			random_in_range(0.0f, timestep),		// age
+			time,									// creation_time
 		};
 
 		// Increment to the next particle, wrapping around to the beginning
@@ -332,9 +338,6 @@ void simulate_particles(float timestep)
 
 		// Update angle using the spin speed, but keep it within [-two_pi, two_pi]
 		particles[i].angle = fmod(particles[i].angle + timestep * particles[i].spin, two_pi);
-
-		// Update age
-		particles[i].age += timestep;
 	}
 }
 
@@ -350,7 +353,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 void window_resize_callback(GLFWwindow* window, int width, int height)
 {
 	// Re-render the scene so that it responds continuously while user is resizing.
-	// (Ordinarily, GLFW doesn't resume rendering until the resize is finished).
+	// (Ordinarily, GLFW doesn't resume rendering until the resize is finished.)
 	render_frame();
 	glfwSwapBuffers(window);
 }
