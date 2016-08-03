@@ -16,6 +16,12 @@ layout(location = 1) in vec2 particle_position;
 layout(location = 2) in vec2 particle_velocity;
 layout(location = 3) in vec4 particle_angle_spin_size_age;	// Four values packed together in a vec4
 
+// Output data to send to fragment shader
+layout(location = 0) out vec2 o_vertex_position;
+layout(location = 1) out vec2 o_particle_position;
+layout(location = 2) out vec2 o_particle_velocity;
+layout(location = 3) out vec4 o_particle_angle_spin_size_age;
+
 void main()
 {
 	float particle_angle = particle_angle_spin_size_age.x;
@@ -33,4 +39,11 @@ void main()
 	// Use the window size to scale the vertex position from world space to [-1, 1] screen space
 	vec2 screen_space_pos = (world_space_pos - window_center) / (0.5 * window_size);
 	gl_Position = vec4(screen_space_pos, 0.0, 1.0);
+
+	// Pass through vertex attributes to fragment shader, so we can
+	// do calculations based on these values there too, if we want.
+	o_vertex_position = vertex_position;
+	o_particle_position = particle_position;
+	o_particle_velocity = particle_velocity;
+	o_particle_angle_spin_size_age = particle_angle_spin_size_age;
 }
