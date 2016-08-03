@@ -47,7 +47,6 @@ struct uniform_data
 // Global variables
 static const int	num_particles = 1000;
 particle_data		particles[num_particles] = {};
-int					next_particle_index = 0;
 int					num_vertices_per_particle = 0;
 
 GLFWwindow*			window = nullptr;
@@ -61,8 +60,8 @@ GLuint				particle_shader_program = 0;
 void load_shaders();
 void init_graphics();
 void render_frame();
-void generate_particles();
-void simulate_particles();
+void generate_particles(float timestep);
+void simulate_particles(float timestep);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void window_resize_callback(GLFWwindow* window, int width, int height);
 void debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* msg, const void* data);
@@ -111,13 +110,18 @@ int main (int, const char **)
 	init_graphics();
 
 	// Loop until the user closes the window
+	double prev_time = 0.0;
 	while (!glfwWindowShouldClose(window))
 	{
+		double cur_time = glfwGetTime();
+		float timestep = float(cur_time - prev_time);
+		prev_time = cur_time;
+
 		// Generate new particles
-		generate_particles();
+		generate_particles(timestep);
 
 		// Simulate particles' forward in time using physics
-		simulate_particles();
+		simulate_particles(timestep);
 
 		// Render a new frame
 		render_frame();
@@ -208,7 +212,7 @@ void render_frame()
 		pixels_to_world_scale * float(window_height),
 		// window_center
 		0.0f,
-		0.3f * world_size,
+		0.4f * world_size,
 	};
 
 	// Send this frame's uniform data to the GPU. Using INVALIDATE_BUFFER_BIT means that
@@ -239,7 +243,7 @@ void render_frame()
 	}
 
 	// Render a nice sky blue background
-	glClearColor(0.0f, 0.75f, 1.0f, 1.0f);
+	glClearColor(0.0f, 0.6f, 1.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	// Set up vertex attributes to be loaded from the vertex buffer by the GPU
@@ -282,20 +286,29 @@ float random_in_range(float min, float max)
 	return min + (max - min) * random_0_to_1;
 }
 
-void generate_particles()
+void generate_particles(float timestep)
 {
-	static const int particles_per_frame = 10;
-	for (int i = 0; i < particles_per_frame; ++i)
+	static int next_particle_index = 0;
+	static float particle_generation_accumulator = 0.0f;
+
+	// Calculate how many particles to generate based on a time emission rate
+	static const float particles_per_second = 50.0f;
+	particle_generation_accumulator += particles_per_second * timestep;
+	int particles_to_generate = int(floor(particle_generation_accumulator));
+	particle_generation_accumulator -= particles_to_generate;
+
+	// Generate the particles by writing into the particles data array
+	for (int i = 0; i < particles_to_generate; ++i)
 	{
 		// Set up a particle with random starting values
 		particles[next_particle_index] = particle_data
 		{
-			random_in_range(-30.0f, 30.0f), random_in_range(-30.0f, 30.0f),		// position
-			0.0f, 0.0f,	// velocity
+			0.0f, 0.0f,								// position
+			random_in_range(-12.0f, 12.0f), random_in_range(24.0f, 48.0f),	// velocity
 			random_in_range(0.0f, two_pi),			// angle
-			0.0f,	// spin
+			random_in_range(-5.0f, 5.0f),			// spin
 			exp2(random_in_range(-2.0f, 0.5f)),		// size
-			random_in_range(0.0f, 1.0f/60.0f),		// age
+			random_in_range(0.0f, timestep),		// age
 		};
 
 		// Increment to the next particle, wrapping around to the beginning
@@ -304,8 +317,25 @@ void generate_particles()
 	}
 }
 
-void simulate_particles()
+void simulate_particles(float timestep)
 {
+	static const float gravity = -40.0f;
+
+	for (int i = 0; i < num_particles; ++i)
+	{
+		// Update position using the velocity vector
+		particles[i].position[0] += timestep * particles[i].velocity[0];
+		particles[i].position[1] += timestep * particles[i].velocity[1];
+
+		// Update velocity using gravity
+		particles[i].velocity[1] += timestep * gravity;
+
+		// Update angle using the spin speed, but keep it within [-two_pi, two_pi]
+		particles[i].angle = fmod(particles[i].angle + timestep * particles[i].spin, two_pi);
+
+		// Update age
+		particles[i].age += timestep;
+	}
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
