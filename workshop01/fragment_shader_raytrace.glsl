@@ -11,7 +11,7 @@ layout(std140) uniform uniform_data
 };
 
 // Input data from vertex shader
-layout(location = 0) in vec2 vertex_position;
+layout(location = 0) in vec2 o_vertex_position;
 
 // Output data to the framebuffer
 layout(location = 0) out vec4 o_color;
@@ -66,8 +66,8 @@ void main()
     
     // Calculate our ray vector
     vec3 camera_ray = camera_facing +
-                      camera_up * vertex_position.y +
-                      camera_right * vertex_position.x * window_size.x / window_size.y;
+                      camera_up * o_vertex_position.y +
+                      camera_right * o_vertex_position.x * window_size.x / window_size.y;
 	
     
     // Perform the ray/sphere intersection
