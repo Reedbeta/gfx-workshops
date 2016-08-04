@@ -288,7 +288,11 @@ void render_frame()
 	// Set the rendering viewport to match the current size of the window
 	int window_width, window_height;
 	glfwGetWindowSize(window, &window_width, &window_height);
-	glViewport(0, 0, window_width, window_height);
+
+	int framebuffer_width, framebuffer_height;
+	glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+
+	glViewport(0, 0, framebuffer_width, framebuffer_height);
 
 	// Get time
 	float time = float(glfwGetTime());
