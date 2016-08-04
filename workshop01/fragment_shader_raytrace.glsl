@@ -80,7 +80,7 @@ void main()
     if (intersects_sphere)
     {
         // Simple light calculation
-        vec3 linear_out = dot(hit_normal, light_dir) * sphere_base_color;        
+        vec3 linear_out = max(dot(hit_normal, light_dir) * sphere_base_color, 0.0);
         o_color = vec4(gamma_correct(linear_out), 0.0f);
     }
     else
