@@ -11,3 +11,7 @@ and Linux.
 		IDE you want to use (it autodetects what's installed on your system).
 	3. Click "Generate". This should produce project files for the selected IDE.
 3. Load the project files in your IDE, and build and run the project!
+
+## Slides
+[Here are the slides](https://docs.google.com/presentation/d/1d0StEQMEdz4JUEHXfTPbwKIGYex2p5Mko1Rj66e5M80/)
+from the workshop we hosted on August 3, 2016 in Seattle.
