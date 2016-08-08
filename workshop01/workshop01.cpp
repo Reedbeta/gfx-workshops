@@ -104,6 +104,7 @@ int main (int, const char **)
 	// Tell GLFW we want debugging support enabled
 	glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, true);
 
+	// Tell GLFW we want at least an OpenGL 4.1 core profile context
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -248,21 +249,18 @@ void init_graphics()
 	glBindBuffer(GL_UNIFORM_BUFFER, uniform_buffer);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(uniform_data), nullptr, GL_DYNAMIC_DRAW);
 
+	// Create a dummy VAO, since one is required by the OpenGL core profile.
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
-
 }
 
 void render_frame()
 {
-	// Set the rendering viewport to match the current size of the window
-	int window_width, window_height;
-	glfwGetWindowSize(window, &window_width, &window_height);
-
+	// Set the rendering viewport to match the current size of the framebuffer
+	// Note that framebuffer size may differ from "window size" due to DPI shenanigans.
 	int framebuffer_width, framebuffer_height;
 	glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
-
 	glViewport(0, 0, framebuffer_width, framebuffer_height);
 
 	// Get time
@@ -273,14 +271,14 @@ void render_frame()
 
 	// Calculate the uniform buffer parameters
 	static const float world_size = 30.0f;		// how many world units across should we be able to see in the window
-	float pixels_to_world_scale = world_size / float(std::min(window_width, window_height));
+	float pixels_to_world_scale = world_size / float(std::min(framebuffer_width, framebuffer_height));
 	uniform_data uniforms =
 	{
-		pixels_to_world_scale * float(window_width),	// window_size.x
-		pixels_to_world_scale * float(window_height),	// window_size.y
-		0.0f, 0.4f * world_size,						// window_center
-		light_dir[0], light_dir[1], light_dir[2],		// light_dir
-		time,							// time
+		pixels_to_world_scale * float(framebuffer_width),	// window_size.x
+		pixels_to_world_scale * float(framebuffer_height),	// window_size.y
+		0.0f, 0.4f * world_size,							// window_center
+		light_dir[0], light_dir[1], light_dir[2],			// light_dir
+		time,												// time
 	};
 
 	// Send this frame's uniform data to the GPU. Using INVALIDATE_BUFFER_BIT means that
@@ -316,7 +314,6 @@ void render_frame()
 
 	// Set up the uniform buffer to be loaded by the shaders
 	glBindBufferRange(GL_UNIFORM_BUFFER, 0, uniform_buffer, 0, sizeof(uniform_data));
-
 	
 	if (!raytrace_mode)
 	{
