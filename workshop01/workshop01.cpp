@@ -26,18 +26,6 @@ static const float two_pi = 6.283185308f;
 struct particle_vertex
 {
 	float position[2];		// position of vertex, as an offset from the center of the particle
-
-	particle_vertex()
-	{
-		position[0] = 0;
-		position[1] = 0;
-	}
-
-	particle_vertex(float x, float y)
-	{
-		position[0] = x;
-		position[1] = y;
-	}
 };
 
 // And a definition for our screen space quad vertices
@@ -55,23 +43,6 @@ struct particle_data
 	float spin;				// how fast it's rotating
 	float size;				// particle size
 	float creation_time;	// when the particle was created
-
-	particle_data()
-	{
-		memset(this, 0, sizeof(*this));
-	}
-
-	particle_data(float x, float y, float vx, float vy, float angle_, float spin_, float size_, float creation_time_)
-	{
-		position[0] = x;
-		position[1] = y;
-		velocity[0] = vx;
-		velocity[1] = vy;
-		angle = angle_;
-		spin = spin_;
-		size = size_;
-		creation_time = creation_time_;
-	}
 };
 
 // Definition of the "uniform" data that will be passed to the shaders...
@@ -225,7 +196,7 @@ void init_graphics()
 	// Generate some vertices. Use math to generate a star shape made out of triangles, just for fun!
 	static const int star_points = 5;
 	static const int num_vertices = 6 * star_points;
-	particle_vertex vertices[num_vertices];
+	particle_vertex vertices[num_vertices] = {};
 	for (int i = 0; i < star_points; ++i)
 	{
 		float angle_left   = two_pi * float(2*i + 1) / float(2*star_points);
@@ -234,12 +205,12 @@ void init_graphics()
 
 		static const float inner_radius = 0.5f;
 		static const float outer_radius = 1.0f;
-		vertices[6*i + 0] = particle_vertex(0.0f, 0.0f);
-		vertices[6*i + 1] = particle_vertex(-sin(angle_right) * inner_radius, cos(angle_right) * inner_radius);
-		vertices[6*i + 2] = particle_vertex(-sin(angle_middle) * outer_radius, cos(angle_middle) * outer_radius);
+		vertices[6*i + 0] = particle_vertex{0.0f, 0.0f};
+		vertices[6*i + 1] = particle_vertex{-sin(angle_right) * inner_radius, cos(angle_right) * inner_radius};
+		vertices[6*i + 2] = particle_vertex{-sin(angle_middle) * outer_radius, cos(angle_middle) * outer_radius};
 		vertices[6*i + 3] = vertices[6*i + 0];
 		vertices[6*i + 4] = vertices[6*i + 2];
-		vertices[6*i + 5] = particle_vertex(-sin(angle_left) * inner_radius, cos(angle_left) * inner_radius);
+		vertices[6*i + 5] = particle_vertex{-sin(angle_left) * inner_radius, cos(angle_left) * inner_radius};
 	}
 
 	// Generate two triangles that make up a screen-space quad
@@ -419,15 +390,15 @@ void generate_particles(float timestep)
 	{
 		// Set up a particle with random starting values
 		particles[next_particle_index] = particle_data
-		(
+		{
 			0.0f, 0.0f,								// position
 			random_in_range(-12.0f, 12.0f),			// velocity.x
 			random_in_range(24.0f, 48.0f),			// velocity.y
 			random_in_range(0.0f, two_pi),			// angle
 			random_in_range(-5.0f, 5.0f),			// spin
 			exp2(random_in_range(-2.0f, 0.5f)),		// size
-			time									// creation_time
-		);
+			time,									// creation_time
+		};
 
 		// Increment to the next particle, wrapping around to the beginning
 		// of the buffer once we've gone through the whole thing.

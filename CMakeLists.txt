@@ -33,6 +33,10 @@ if (WIN32)
 endif()
 add_subdirectory(glfw)
 
+# Enable C++11 support for workshop projects
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # Build the individual workshop projects
 set(WORKSHOPS_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 add_subdirectory(workshop01)
