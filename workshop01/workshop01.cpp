@@ -207,11 +207,11 @@ void init_graphics()
 		static const float inner_radius = 0.5f;
 		static const float outer_radius = 1.0f;
 		vertices[6*i + 0] = particle_vertex{0.0f, 0.0f};
-		vertices[6*i + 1] = particle_vertex{-sin(angle_right) * inner_radius, cos(angle_right) * inner_radius};
-		vertices[6*i + 2] = particle_vertex{-sin(angle_middle) * outer_radius, cos(angle_middle) * outer_radius};
+		vertices[6*i + 1] = particle_vertex{(float)(-sin(angle_right) * inner_radius), (float)(cos(angle_right) * inner_radius)};
+		vertices[6*i + 2] = particle_vertex{(float)(-sin(angle_middle) * outer_radius), (float)(cos(angle_middle) * outer_radius)};
 		vertices[6*i + 3] = vertices[6*i + 0];
 		vertices[6*i + 4] = vertices[6*i + 2];
-		vertices[6*i + 5] = particle_vertex{-sin(angle_left) * inner_radius, cos(angle_left) * inner_radius};
+		vertices[6*i + 5] = particle_vertex{(float)(-sin(angle_left) * inner_radius), (float)(cos(angle_left) * inner_radius)};
 	}
 
 	// Generate two triangles that make up a screen-space quad
@@ -267,7 +267,7 @@ void render_frame()
 	float time = float(glfwGetTime());
 
 	// Calculate a moving light source
-	float light_dir[3] = { cos(time) * 0.7f, 0.5f, sin(time) * 0.7f };
+	float light_dir[3] = { (float)cos(time) * 0.7f, 0.5f, (float)sin(time) * 0.7f };
 
 	// Calculate the uniform buffer parameters
 	static const float world_size = 30.0f;		// how many world units across should we be able to see in the window
@@ -393,7 +393,7 @@ void generate_particles(float timestep)
 			random_in_range(24.0f, 48.0f),			// velocity.y
 			random_in_range(0.0f, two_pi),			// angle
 			random_in_range(-5.0f, 5.0f),			// spin
-			exp2(random_in_range(-2.0f, 0.5f)),		// size
+			(float)exp2(random_in_range(-2.0f, 0.5f)),		// size
 			time,									// creation_time
 		};
 
